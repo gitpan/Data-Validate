@@ -2,6 +2,7 @@ Changes
 Makefile.PL
 MANIFEST
 INSTALL
+README
 Validate.pm
 t/ExtUtils/TBone.pm
 t/is_alphanumeric.t

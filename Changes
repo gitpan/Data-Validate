@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::Validate.
 
+0.03  20041222
+	- fixed overflow bug in is_integer() that was causing it to fail on long (but valid) integers.
+
 0.02  20041213
 	- added OO interface and updated tests
 

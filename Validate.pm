@@ -34,7 +34,7 @@ use POSIX;
 		string	=>	[qw(is_equal_to is_alphanumeric is_printable length_is_between)],
 );
 
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 
 # No preloads
@@ -164,12 +164,12 @@ sub is_integer{
 	return unless defined($value);
 	
 	# see if we can parse it to an integer without loss
-	my($int, $leftover) = POSIX::strtol($value);
+	my($int, $leftover) = POSIX::strtod($value);
 	
 	return if $leftover;
 	
-	# at this point the int be defined and contain only numbers, dots, and -
-	return unless(defined($int) && $int !~ /[^\d\.\-]/);
+	# at this point the int be defined and contain only numbers and -
+	return unless(defined($int) && $int !~ /[^\d\-]/);
 	
 	# integer must be identical to the raw cast
 	return unless $int == ($value + 0);
