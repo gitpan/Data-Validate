@@ -1,0 +1,8 @@
+Revision history for Perl extension Data::Validate.
+
+0.02  20041213
+	- added OO interface and updated tests
+
+0.01  Fri Nov  5 15:48:26 2004
+	- original version; created by h2xs 1.19
+
