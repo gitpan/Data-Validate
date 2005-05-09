@@ -18,6 +18,8 @@ use POSIX;
 @EXPORT_OK = qw(
 		is_integer
 		is_numeric
+		is_hex
+		is_oct
 		is_between
 		is_greater_than
 		is_less_than
@@ -30,11 +32,11 @@ use POSIX;
 );
 
 %EXPORT_TAGS = (
-		math	=>	[qw(is_integer is_numeric is_between is_greater_than is_less_than is_equal_to is_even is_odd)],
+		math	=>	[qw(is_integer is_numeric is_hex is_oct is_between is_greater_than is_less_than is_equal_to is_even is_odd)],
 		string	=>	[qw(is_equal_to is_alphanumeric is_printable length_is_between)],
 );
 
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 
 # No preloads
@@ -244,6 +246,125 @@ sub is_numeric{
 	
 	return $value;
 }
+
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_hex> - is the value a hex number?
+
+  is_hex($value);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted number if the test value is a hex number.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The potential number to test.
+
+=back
+
+=item I<Returns>
+
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
+
+=item I<Notes, Exceptions, & Bugs>
+
+None
+
+=back
+
+=cut
+
+sub is_hex {
+	my $self = shift if ref($_[0]); 
+	my $value = shift;
+	
+	return unless defined $value;
+	
+	return if $value =~ /[^0-9a-f]/i;
+	$value = lc($value);
+	
+	my $int = hex($value);
+	return unless (defined $int);
+	my $hex = sprintf "%x", $int;
+	return $hex if ($hex eq $value);
+	
+	# handle zero stripping
+	if (my ($z) = $value =~ /^(0+)/) {
+		return "$z$hex" if ("$z$hex" eq $value);
+	}
+	
+	return;
+}
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_oct> - is the value an octal number?
+
+  is_oct($value);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted number if the test value is a octal number.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The potential number to test.
+
+=back
+
+=item I<Returns>
+
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
+
+=item I<Notes, Exceptions, & Bugs>
+
+None
+
+=back
+
+=cut
+
+sub is_oct {
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	
+	return unless defined $value;
+	
+	return if $value =~ /[^0-7]/;
+		
+	my $int = oct($value);
+	return unless (defined $int);
+	my $oct = sprintf "%o", $int;
+	return $oct if ($oct eq $value);
+	
+	# handle zero stripping
+	if (my ($z) = $value =~ /^(0+)/) {
+		return "$z$oct" if ("$z$oct" eq $value);
+	}
+	
+	return;
+}
+
 
 # -------------------------------------------------------------------------------
 

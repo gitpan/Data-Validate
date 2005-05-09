@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::Validate.
 
+0.04  20050509
+	- added is_hex and is_oct functions provided by Neil Neely (neil@frii.com)
+
 0.03  20041222
 	- fixed overflow bug in is_integer() that was causing it to fail on long (but valid) integers.
 

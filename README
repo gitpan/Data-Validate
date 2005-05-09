@@ -90,6 +90,43 @@ FUNCTIONS
         *Notes, Exceptions, & Bugs*
             Number translation is done by POSIX casting tools (strtol).
 
+    is_hex - is the value a hex number?
+          is_hex($value);
+
+        *Description*
+            Returns the untainted number if the test value is a hex number.
+
+        *Arguments*
+
+            $value
+                The potential number to test.
+
+        *Returns*
+            Returns the untainted number on success, undef on failure. Note
+            that the return can be 0, so always check with defined()
+
+        *Notes, Exceptions, & Bugs*
+            None
+
+    is_oct - is the value an octal number?
+          is_oct($value);
+
+        *Description*
+            Returns the untainted number if the test value is a octal
+            number.
+
+        *Arguments*
+
+            $value
+                The potential number to test.
+
+        *Returns*
+            Returns the untainted number on success, undef on failure. Note
+            that the return can be 0, so always check with defined()
+
+        *Notes, Exceptions, & Bugs*
+            None
+
     is_between - is the value between to numbers?
           is_between($value, $min, $max);
 
