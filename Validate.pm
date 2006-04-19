@@ -36,7 +36,7 @@ use POSIX;
 		string	=>	[qw(is_equal_to is_alphanumeric is_printable length_is_between)],
 );
 
-$VERSION = '0.04';
+$VERSION = '0.05';
 
 
 # No preloads
@@ -50,7 +50,7 @@ Data::Validate - common data validation methods
 
 =head1 SYNOPSIS
 
-  use Data::Validate wq(:math);
+  use Data::Validate qw(:math);
   
   if(defined(is_integer($suspect))){
   	print "Looks like an integer\n";

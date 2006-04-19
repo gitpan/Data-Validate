@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::Validate.
 
+0.05  20060419
+	- Fixed a typo in the synopsis documentation.  Thanks to Peter Beckman for spotting it.
+
 0.04  20050509
 	- added is_hex and is_oct functions provided by Neil Neely (neil@frii.com)
 
