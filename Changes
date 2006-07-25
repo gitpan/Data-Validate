@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::Validate.
 
+0.06  20060723
+	- started converting some numeric functions to handle very large integers.
+
 0.05  20060419
 	- Fixed a typo in the synopsis documentation.  Thanks to Peter Beckman for spotting it.
 

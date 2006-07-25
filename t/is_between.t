@@ -14,7 +14,7 @@ use Data::Validate qw(is_between);
 
 my $t = ExtUtils::TBone->typical();
 
-$t->begin(8);
+$t->begin(10);
 $t->msg("testing is_between...");
 
 # normal integer
@@ -22,6 +22,12 @@ $t->ok(defined(is_between(5, 0,10)), "5 should be between 0 and 10");
 
 # normal float
 $t->ok(defined(is_between(5.5, 0, 10)), "5.5 should be between 0 and 10");
+
+# very long integer
+$t->ok(defined(is_between('9223372036854775808', '9223372036854775807', '9223372036854775809')), "9223372036854775808 should be between 9223372036854775807 and 9223372036854775809");
+
+# very long integer
+$t->ok(!defined(is_between('9223372036854775810', '9223372036854775807', '9223372036854775809')), "9223372036854775810 is not between 9223372036854775807 and 9223372036854775809");
 
 # out of range positive
 $t->ok(!defined(is_between(500, 0,10)), "500 should not be between 0 and 10");

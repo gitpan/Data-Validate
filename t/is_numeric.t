@@ -14,7 +14,7 @@ use Data::Validate qw(is_numeric);
 
 my $t = ExtUtils::TBone->typical();
 
-$t->begin(7);
+$t->begin(8);
 $t->msg("testing is_numeric...");
 
 # normal integer
@@ -22,6 +22,9 @@ $t->ok(defined(is_numeric(5)), "5 should pass");
 
 # normal integer
 $t->ok(defined(is_numeric(0)), "0 should pass");
+
+# big integer
+$t->ok(defined(is_numeric(-9223372036854775808)), "-9223372036854775808 should pass");
 
 # float
 $t->ok(defined(is_numeric(1.01)), "1.01 should pass");

@@ -7,6 +7,8 @@ require Exporter;
 use AutoLoader 'AUTOLOAD';
 
 use POSIX;
+use Scalar::Util qw(looks_like_number);
+use Math::BigInt;
 
 @ISA = qw(Exporter);
 
@@ -36,7 +38,7 @@ use POSIX;
 		string	=>	[qw(is_equal_to is_alphanumeric is_printable length_is_between)],
 );
 
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 
 # No preloads
@@ -164,24 +166,37 @@ sub is_integer{
 	my $value = shift;
 	
 	return unless defined($value);
+	return unless defined(is_numeric($value)); # for efficiency
 	
-	# see if we can parse it to an integer without loss
+	# see if we can parse it to an number without loss
 	my($int, $leftover) = POSIX::strtod($value);
 	
 	return if $leftover;
 	
-	# at this point the int be defined and contain only numbers and -
-	return unless(defined($int) && $int !~ /[^\d\-]/);
+	# we're having issues testing very large integers.  Math::BigInt
+	# can do this for us, but defeats the purpose of being
+	# lightweight. So, we're going to try a huristic method to choose
+	# how to test for integernesss
+	if(length($int) > 10){
+		my $i = Math::BigInt->new($value);
+		return unless $i->is_int();
+		
+		# untaint
+		($int) = $i->bstr() =~ /(.+)/;
+		return $int;
+	}
+		
+	 
+	# shorter integer must be identical to the raw cast
+	return unless (($int + 0) == ($value + 0));
 	
-	# integer must be identical to the raw cast
-	return unless $int == ($value + 0);
+	# could still be a float at this point.
+	return if $value =~ /[^0-9\-]/;
 	
 	# looks like it really is an integer.  Untaint it and return
 	($value) = $int =~ /([\d\-]+)/;
 	
-	
-	
-	return $value;
+	return $value + 0;
 }
 
 
@@ -197,9 +212,8 @@ sub is_integer{
 
 =item I<Description>
 
-Returns the untainted number if the test value is numeric, or can be cast to
-a number without a any bits being left over.  (i.e. 1.0 is considered a 
-number, 1.0hello is not.)
+Returns the untainted number if the test value is numeric according to
+Perl's own internal rules.  (actually a wrapper on Scalar::Util::looks_like_number)
 
 =item I<Arguments>
 
@@ -230,21 +244,12 @@ sub is_numeric{
 	
 	return unless defined($value);
 	
-	# see if we can parse it to a float without loss
-	my($num, $leftover) = POSIX::strtod($value);
-	
-	return if $leftover;
-	
-	# at this point the int be defined and contain only numbers, dots, and -
-	return unless(defined($num) && $num !~ /[^\d\.\-]/);
-	
-	# number must be identical to the raw cast
-	return unless $num == ($value + 0);
+	return unless looks_like_number($value);
 	
 	# looks like it really is a number.  Untaint it and return
-	($value) = $num =~ /([\d\.\-]+)/;
+	($value) = $value =~ /([\d\.\-+e]+)/;
 	
-	return $value;
+	return $value  + 0;
 }
 
 
@@ -370,7 +375,7 @@ sub is_oct {
 
 =pod
 
-=item B<is_between> - is the value between to numbers?
+=item B<is_between> - is the value between two numbers?
 
   is_between($value, $min, $max);
 
@@ -420,6 +425,30 @@ sub is_between{
 	# must be a number
 	my $untainted = is_numeric($value);
 	return unless defined($untainted);
+	
+	# issues with very large numbers.  Fall over to using 
+	# arbitrary precisions math.
+	if(length($value) > 10){
+		
+		my $i = Math::BigInt->new($value);
+		
+		# minimum bound
+		if(defined($min)){
+			$min = Math::BigInt->new($min);
+			return unless $i >= $min;
+		}
+		
+		# maximum bound
+		if(defined($max)){
+			$max = Math::BigInt->new($max);
+			return unless $i <= $max;
+		}
+		
+		# untaint
+		($value) = $i->bstr() =~ /(.+)/;
+		return $value;
+	}
+	
 	
 	# minimum bound
 	if(defined($min)){
