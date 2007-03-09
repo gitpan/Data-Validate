@@ -1,689 +1,920 @@
-#
-# Copyright (c) 2007 Thomas Linden <tlinden |AT| cpan.org>.
-# All Rights Reserved. Std. disclaimer applies.
-# Artificial License, same as perl itself. Have fun.
-#
-# namespace
 package Data::Validate;
 
 use strict;
-use warnings;
-use English '-no_match_vars';
-use Carp;
-use Exporter;
-use Data::Dumper;
+use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 
-use Regexp::Common::URI::RFC2396 qw /$host $port/;
-use Regexp::Common qw /URI number net delimited/;
+require Exporter;
+use AutoLoader 'AUTOLOAD';
 
-use File::Spec::Functions qw/file_name_is_absolute/;
-use File::stat;
+use POSIX;
+use Scalar::Util qw(looks_like_number);
+use Math::BigInt;
 
-use constant FALSE => 0;
-use constant TRUE  => 1;
-
-$Data::Validate::VERSION = 0.04;
-
-use vars  qw(@ISA);
-
-sub new {
-  my( $this, $structure ) = @_;
-  my $class = ref($this) || $this;
-
-  my $self;
-  $self->{structure} = $structure;
-  $self->{types} = {
-		    # primitives
-		    int            => qr(^\d+$),
-		    number         => qr(^$RE{num}{decimal}$),
-		    word           => qr(^[\w_\-]+$),
-		    line           => qr/^[^\n]+$/s,
-
-		    # note by David Cantrel: will match stuff containing control characters
-		    # however, I'm unsure how to make sure a value is "text"...
-		    # perhaps it could be better named 'any'? FIXME.
-		    text           => qr/.+/s,
-
-		    # this is a bit loosy but should match most regular expressions
-		    # using the qr() operator, but it doesn't check if the expression
-		    # is valid. we could do this by compiling it, but this would lead
-		    # to exploitation possiblities to programs using the module.
-		    regex          => qr/^qr ( (.).*\1 | \(.*\) | \{.*\} ) $/x,
-
-		    # via imported regexes
-		    uri            => qr(^$RE{URI}$),
-		    cidrv4         => qr/^$RE{net}{IPv4} \/ ( [0-9] | [12][0-9] | 3[0-2] )$/x,
-		    ipv4           => qr/^$RE{net}{IPv4}$/,
-                    quoted         => qr/^$RE{delimited}{ -delim => qr(\') }$/,
-		    hostname       => qr(^$host$),
-
-		    # IPv6 addresses
-		    # well, this expression is very complicated - I found it on:
-		    # http://blogs.msdn.com/mpoulson/archive/2005/01/10/350037.aspx
-		    # Thanks to Mike Poulson!
-		    # Interesting side note: those expressions were written for
-		    # VB.net - since it works here unchanged, I think they use PCRE :-)
-		    ipv6           => qr/^
-					 (
-                                           (?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}
-					 )
-                                         |
-					 (
-                                           ((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)::
-                                             ((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)
-					 )
-                                         |
-					 (
-                                           ((?:[0-9A-Fa-f]{1,4}:){6,6})(25[0-5]|2[0-4]\d|
-                                                      [0-1]?\d?\d)(\.(25[0-5]|2[0-4]\d|[0-1]?\d?\d)){3}
-					 )
-                                         |
-					 (
-                                           ((?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)
-                                                      ::((?:[0-9A-Fa-f]{1,4}:)*)(25[0-5]|2[0-4]\d|
-                                                      [0-1]?\d?\d)(\.(25[0-5]|2[0-4]\d|[0-1]?\d?\d)){3}
-					 )
-                                        $/x,
-
-		    # matches perl style scalar variables
-		    # possible matches: $var ${var} $(var)
-		    vars           => qr/(?<!\\) ( \$\w+ | \$\{[^\}]+\} | \$\([^\)]+\) )/x,
-
-		    # closures
-
-		    # this one doesn't do a stat() syscall, so keep cool
-		    path           => sub { return file_name_is_absolute($_[0]); },
-
-		    # though this one does it - it stat()s if the file exists
-		    fileexists     => sub { return stat($_[0]); },
-
-		    # do a dns lookup on given value, this also fails if
-		    # no dns is available - so be careful with this
-		    resolvablehost => sub { return gethostbyname($_[0]); },
-
-		    # looks if the given value is an existing user on the host system
-		    user           => sub { return (getpwnam($_[0]))[0]; },
-
-		    # same with group
-		    group          => sub { return getgrnam($_[0]); },
-
-		    # int between 0 - 65535
-		    port           => sub { if ( $_[0] =~ /^$port$/ && ($_[0] > 0 && $_[0] < 65535) ) { return 1; } else { return 0; } },
-
-		    };
-
-  $self->{debug} = 0;
-
-  foreach my $type (%{$self->{types}}) {
-    # add negative match types
-    $self->{types}->{'no' . $type} = $self->{types}->{$type};
-  }
-
-  bless $self, $class;
-
-  return $self;
-}
+@ISA = qw(Exporter);
 
 
-sub type {
-  my ($this, %param) = @_;
-  foreach my $type (keys %param) {
-    $this->{types}->{$type} = $param{$type};
-  }
-}
+
+# no functions are exported by default.  See EXPORT_OK
+@EXPORT = qw();
+
+@EXPORT_OK = qw(
+		is_integer
+		is_numeric
+		is_hex
+		is_oct
+		is_between
+		is_greater_than
+		is_less_than
+		is_equal_to
+		is_even
+		is_odd
+		is_alphanumeric
+		is_printable
+		length_is_between
+);
+
+%EXPORT_TAGS = (
+		math	=>	[qw(is_integer is_numeric is_hex is_oct is_between is_greater_than is_less_than is_equal_to is_even is_odd)],
+		string	=>	[qw(is_equal_to is_alphanumeric is_printable length_is_between)],
+);
+
+$VERSION = '0.07';
 
 
-sub debug {
-  my ($this) = @_;
-  $this->{debug} = 1;
-}
-
-sub errstr {
-  my ($this) = @_;
-  if (exists $this->{error}) {
-    return $this->{error};
-  }
-}
-
-sub validate {
-  my($this, $config) = @_;
-
-  eval {
-    $this->traverse($this->{structure}, $config);
-  };
-  if ($@) {
-    $this->{error} = $@;
-    return FALSE;
-  }
-  else {
-    return TRUE;
-  }
-}
-
-sub _debug {
-  my ($this, $msg) = @_;
-  if ($this->{debug}) {
-    print STDERR "::Validate::debug() - $msg\n";
-  }
-}
-
-sub traverse {
-  my($this, $a, $b) = @_;
-
-  foreach my $key (keys %{$a}) {
-
-    if (ref($a->{$key}) eq 'ARRAY') {
-      # just use the 1st one, more elements in array are expected to be the same
-      foreach my $item (@{$b->{$key}}) {
-	if (ref($item) eq q(HASH)) {
-	  $this->traverse($a->{$key}->[0], $item);
-	}
-	else {
-	  # a value, this is tricky
-	  $this->traverse({item => $a->{$key}->[0]}, { item => $item});
-	}
-      }
-    }
-    elsif (ref($a->{$key}) eq 'HASH') {
-      $this->traverse($a->{$key}, $b->{$key});
-    }
-    elsif (grep {ref($a->{$key}) ne $_} qw(GLOB REF CODE LVALUE) ) {
-      # check data type
-      if (! exists $this->{types}->{$a->{$key}}) {
-	croak qq(Invalid data type "$a->{$key}");
-      }
-      else {
-	if (exists $b->{$key}) {
-	  if ($a->{$key} =~ /^no\s*/) {
-	    $this->check_type($a->{$key}, $key, $b->{$key}, sub{ die $_[0]; }, sub {});
-	  }
-	  else {
-	    $this->check_type($a->{$key}, $key, $b->{$key}, sub{}, sub{ die $_[0]; });
-	  }
-	}
-	else {
-	  die "requred $key doesn't exist in hash\n";
-	}
-      }
-    }
-  }
-}
-
-sub check_type {
-  my($this, $type, $name, $value, $true, $false) = @_;
-
-  if (ref($this->{types}->{$type}) eq q(CODE)) {
-    # execute closure
-    my $sub = $this->{types}->{$type};
-    if (! &$sub($value)) {
-      $this->_debug( "$name = $value, value is not $type");
-      die "$name = $value, value is not $type";
-    }
-    else {
-      $this->_debug( "$name = $value, value is $type");
-    }
-  }
-  else {
-    if ($value =~ /$this->{types}->{$type}/) {
-      $this->_debug( "$name = $value, value doesn't match /$type/");
-      &$true( "$name = $value, value doesn't match /$type/\n");
-    }
-    else {
-      $this->_debug( "$name = $value, value matches /$type/");
-      &$false( "$name = $value, value doesn't match /$type/\n");
-    }
-  }
-
-}
-
+# No preloads
 
 1;
-
-
 __END__
 
 =head1 NAME
 
-Data::Validate - Validate Config Hashes
+Data::Validate - common data validation methods
 
 =head1 SYNOPSIS
 
- use Data::Validate;
- my $validator = new Data::Validate($reference);
- if ( $validator->validate($config_hash_reference) ) {
-   print "valid\n";
- }
- else {
-   print "invalid " . $validator->errstr() . "\n";
- }
+  use Data::Validate qw(:math);
+  
+  if(defined(is_integer($suspect))){
+  	print "Looks like an integer\n";
+  }
+  
+  my $name = is_alphanumeric($suspect);
+  if(defined($name)){
+  	print "$name is alphanumeric, and has been untainted\n";
+  } else {
+  	print "$suspect was not alphanumeric"
+  }
+  
+  # or as an object
+  my $v = Data::Validate->new();
+  
+  die "'foo' is not an integer" unless defined($v->is_integer('foo'));
 
 =head1 DESCRIPTION
 
-This module validates a config hash reference
-against a given hash structure. This hash could be the
-result of a config parser or just any hash structure. Eg. the hash
-returned by L<XML::Simple> could be validated using
-this module. You may also use it to validate CGI input, just
-fetch the input data from CGI, L<map> it to a hash and
-validate it.
+This module collects common validation routines to make input validation,
+and untainting easier and more readable.  Most of the functions are not much
+shorter than their direct perl equivalent (and are much longer in some cases),
+but their names make it clear what you're trying to test for.
 
+Almost all functions return an untainted value if the test passes, and undef if
+it fails.  This means that you should always check for a defined status explicitly.
+Don't assume the return will be true. (e.g. is_integer(0))
 
-=head1 PREDEFINED BUILTIN DATA TYPES
+The value to test is always the first (and often only) argument.
 
-=over
+=head1 FUNCTIONS
 
-=item B<int>
+=over 4
 
-Match a simple integer number.
+=cut
 
-=item B<number>
+# -------------------------------------------------------------------------------
 
-Match a decimal number, it may contain , or . and may be signed.
+=pod
 
-=item B<word>
+=item B<new> - constructor for OO usage
 
-Match a single word, _ and - are tolerated.
+  new();
 
-=item B<line>
+=over 4
 
-Match a line of text - no newlines are allowed.
+=item I<Description>
 
-=item B<text>
+Returns a Data::Validator object.  This lets you access all the validator function
+calls as methods without importing them into your namespace or using the clumsy
+Data::Validate::function_name() format.
 
-Match a whole text(blob) including newlines. This expression
-is very loosy, consider it as an alias to B<any>.
+=item I<Arguments>
 
-=item B<regex>
+None
 
-Match a perl regex using the operator qr(). Valid examples include:
+=item I<Returns>
 
- qr/[0-9]+/
- qr([^%]*)
- qr{\w+(\d+?)}
-
-Please note, that this doesn't mean you can provide
-here a regex against config options must match.
-
-Instead this means that the config options contains a regex.
-
-eg:
-
- <cfg>
-   grp  = qr/root|wheel/
- </cfg>
-
-B<regex> would match the content of the variable 'grp'
-in this example.
-
-To add your own rules for validation, use the B<type()>
-method, see below.
-
-=item B<uri>
-
-Match an internet URI.
-
-=item B<ipv4>
-
-Match an IPv4 address.
-
-=item B<cidrv4>
-
-The same as above including cidr netmask (/24), IPv4 only, eg:
-
- 10.2.123.0/23
-
-Note: shortcuts are not supported for the moment, eg:
-
- 10.10/16
-
-will fail while it is still a valid IPv4 cidr notation for
-a network address (short for 10.10.0.0/16). Must be fixed
-in L<Regex::Common>.
-
-=item B<ipv6>
-
-Match an IPv6 address. Some examples:
-
- 3ffe:1900:4545:3:200:f8ff:fe21:67cf
- fe80:0:0:0:200:f8ff:fe21:67cf
- fe80::200:f8ff:fe21:67cf
- ff02:0:0:0:0:0:0:1
- ff02::1
-
-=item B<quoted>
-
-Match a text quoted with single quotes, eg:
-
- 'barbara is sexy'
-
-=item B<hostname>
-
-Match a valid hostname, it must qualify to the definitions
-in RFC 2396.
-
-=item B<resolvablehost>
-
-Match a hostname resolvable via dns lookup. Will fail if no
-dns is available at runtime.
-
-=item B<path>
-
-Match a valid absolute path, it won't do a stat() system call.
-This will work on any operating system at runtime. So this one:
-
- C:\Temp
-
-will return TRUE if running on WIN32, but FALSE on FreeBSD!
-
-=item B<fileexists>
-
-Look if value is a file which exists. Does a stat() system call.
-
-=item B<user>
-
-Looks if the given value is an existent user. Does a getpwnam() system call.
-
-=item B<group>
-
-Looks if the given value is an existent group. Does a getgrnam() system call.
-
-=item B<port>
-
-Match a valid tcp/udp port. Must be a digit between 0 and 65535.
-
-=item B<vars>
-
-Matches a string of text containing variables (perl style variables though)
-eg:
-
- $user is $attribute
- I am $(years) old
- Missing ${points} points to succeed
+Returns a Data::Validate object
 
 =back
 
+=cut
 
+sub new{
+	my $class = shift;
+	
+	return bless {}, $class;
+}
 
-=head1 NEGATIVE MATCHING
+# -------------------------------------------------------------------------------
 
-In some rare situations you might require a negative match. So
-a test shall return TRUE if a particular value does NOT match the
-given type. This might be usefull to prevent certain things.
+=pod
 
-To achieve this, you just have to prepend one of the below mentioned
-types with the keyword B<no>.
+=item B<is_integer> - is the value an integer?
 
-Example:
+  is_integer($value);
 
- $ref = { path => 'novars' }
+=over 4
 
-This returns TRUE if the value of the given config hash does NOT
-contain ANY variables.
+=item I<Description>
 
+Returns the untainted number if the test value is an integer, or can be cast to
+one without a loss of precision.  (i.e. 1.0 is considered an integer, but 1.0001 is not.)
 
-=head1 VALIDATOR STRUCTURE
+=item I<Arguments>
 
-The expected structure must be a standard perl hash reference.
-This hash may look like the config you are validating but
-instead of real-live values it contains B<types> that define
-of what type a given value has to be.
+=over 4
 
-In addition the hash may be deeply nested. In this case the
-validated config must be nested the same way as the reference
-hash.
+=item $value
 
-Example:
-
- $reference = { user => 'word', uid => 'int' };
-
-The following config would be validated successful:
-
- $config = { user => 'HansDampf',  uid => 92 };
-
-this one not:
-
- $config = { user => 'Hans Dampf', uid => 'nine' };
-                          ^                ^^^^
-                          |                |
-                          |                +----- is not a number
-                          +---------------------- space not allowed
-
-For easier writing of references you yould use a configuration
-file parser like Config::General or Config::Any, just write the
-definition using the syntax of such a module, get the hash of it
-and use this hash as validation reference.
-
-=head1 NESTED HASH STRUCTURES
-
-You can also match against nested structures. B<Data::Validate> iterates
-into the given config hash the same way as the reference hash looks like.
-
-If the config hash doesn't match the reference structure, perl will
-throw an error, which B<Data::Validate> catches and returns FALSE.
-
-Given the following reference hash:
-
- $ref = {
- 'b1' => {
-          'b2' => {
-                   'b3' => {
-                            'item' => 'int'
-                           }
-                  }
-          }
- }
-
-Now if you validate it against the following config hash it
-will return TRUE:
-
- $cfg = {
- 'b1' => {
-	  'b2' => {
-		   'b3' => {
-			    'item' => '100'
-			   }
-		  }
-	 }
- }
-
-If you validate it for example against this hash, it will
-return FALSE:
-
- $cfg = {
- 'b1' => {
-	  'b2' => {
-		    'item' => '100'
-		   }
-	 }
- }
-
-=head1 SUBROUTINES/METHODS
-
-=over
-
-=item B<validate($config)>
-
-$config must be a hash reference you'd like to validate.
-
-It returns a true value if the given structure looks valid.
-
-If the return value is false (0), then the error message will
-be written to the variable $!.
-
-=item B<type(%types)>
-
-You can enhance the validator by adding your own rules. Just
-add one or more new types using a simple hash using the B<type()>
-method. Values in this hash can be regexes or anonymous subs.
-
-Example:
-
- $v3->type(
-  (
-  address => qr(^\w+\s\s*\d+$),
-  list    =>
-    sub {
-      my $list = $_[0];
-      my @list = split /\s*,\s*/, $list;
-      if (scalar @list > 1) {
-	return 1;
-      }
-      else {
-	return 0;
-      }
-    }
-  )
- );
-
-In this example we add 2 new types, 'list' and 'address', which
-are really simple. 'address' is a regex which matches a word
-followed by an integer. 'list' is a subroutine which gets called
-during evaluation for each option which you define as type 'list'.
-
-Such subroutines must return a true value in order to produce a match.
-
-You can also add reversive types, which are like all other types
-but start with B<no>. The validator does a negative match in such a
-case, thus you will have a match if a variable does B<not> match
-the type. The builtin type 'novars' is such a type.
-
-Regexes will be executed exactly as given. No flags or ^ or $
-will be used by the module. Eg. if you want to match the whole
-value from beginning to the end, add ^ and $, like you can see
-in our 'address' example above.
-
-=item B<debug()>
-
-Enables debug output which gets printed to STDERR.
-
-=item B<errstr()>
-
-Returns the last error, which is useful to notify the user
-about what happened.
+The potential integer to test.
 
 =back
 
-=head1 ARRAYS
+=item I<Returns>
 
-Arrays must be handled in a special way, just define an array
-with two elements and the second empty. The config will only
-validated against the first element in the array.
+Returns the untainted integer on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
 
-We assume all elements in an array must have the same structure.
+=item I<Notes, Exceptions, & Bugs>
 
-Example for array of hashes:
+Number translation is done by POSIX casting tools (strtol).
 
- $reference = {
-                [
-                  {
-                     user => 'word',
-                     uid => 'int'
-                  },
-                  {} # empty 2nd element
-                ]
-               };
+=back
 
-Example of array of values:
+=cut
 
- $reference = {
-  var => [ 'int', '' ]
- }
+sub is_integer{
+	my $self = shift if ref($_[0]); 
+	my $value = shift;
+	
+	return unless defined($value);
+	return unless defined(is_numeric($value)); # for efficiency
+	
+	# see if we can parse it to an number without loss
+	my($int, $leftover) = POSIX::strtod($value);
+	
+	return if $leftover;
+	
+	# we're having issues testing very large integers.  Math::BigInt
+	# can do this for us, but defeats the purpose of being
+	# lightweight. So, we're going to try a huristic method to choose
+	# how to test for integernesss
+	if(length($int) > 10){
+		my $i = Math::BigInt->new($value);
+		return unless $i->is_int();
+		
+		# untaint
+		($int) = $i->bstr() =~ /(.+)/;
+		return $int;
+	}
+		
+	 
+	# shorter integer must be identical to the raw cast
+	return unless (($int + 0) == ($value + 0));
+	
+	# could still be a float at this point.
+	return if $value =~ /[^0-9\-]/;
+	
+	# looks like it really is an integer.  Untaint it and return
+	($value) = $int =~ /([\d\-]+)/;
+	
+	return $value + 0;
+}
 
-=head1 EXAMPLES
 
-Take a look to F<t/run.t> for lots of examples.
+# -------------------------------------------------------------------------------
 
-=head1 CONFIGURATION AND ENVIRONMENT
+=pod
 
-No environment variables will be used.
+=item B<is_numeric> - is the value numeric?
 
-=head1 SEE ALSO
+  is_numeric($value);
 
-I recommend you to read the following documentations, which are supplied with perl:
+=over 4
 
- perlreftut                     Perl references short introduction
- perlref                        Perl references, the rest of the story
- perldsc                        Perl data structures intro
- perllol                        Perl data structures: arrays of arrays
+=item I<Description>
 
-=head1 LICENSE AND COPYRIGHT
+Returns the untainted number if the test value is numeric according to
+Perl's own internal rules.  (actually a wrapper on Scalar::Util::looks_like_number)
 
-Copyright (c) 2007 Thomas Linden
+=item I<Arguments>
 
-This library is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself.
+=over 4
 
-=head1 BUGS AND LIMITATIONS
+=item $value
 
-Some implementation details as well as the API may change
-in the future. This will no more happen if entering a stable
-release (starting with 1.00).
+The potential number to test.
 
-To submit use L<http://rt.cpan.org>.
+=back
 
-=head1 INCOMPATIBILITIES
+=item I<Returns>
 
-None known.
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
 
-=head1 DIAGNOSTICS
+=item I<Notes, Exceptions, & Bugs>
 
-To debug Data::Validate use B<debug()> or the perl debugger, see L<perldebug>.
+Number translation is done by POSIX casting tools (strtol).
 
-For example to debug the regex matching during processing try this:
+=back
 
- perl -Mre=debug yourscript.pl
+=cut
 
-=head1 DEPENDENCIES
+sub is_numeric{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	
+	return unless defined($value);
+	
+	return unless looks_like_number($value);
+	
+	# looks like it really is a number.  Untaint it and return
+	($value) = $value =~ /([\d\.\-+e]+)/;
+	
+	return $value  + 0;
+}
 
-Data::Validate depends on the module 
-L<Regexp::Common>, L<File::Spec> and L<File::stat>.
 
-=head1 TODO
+# -------------------------------------------------------------------------------
 
-=over
+=pod
 
-=item *
+=item B<is_hex> - is the value a hex number?
 
-Add support for type mixes, such as:
+  is_hex($value);
 
- { name => 'int|number' }
+=over 4
 
-=item *
+=item I<Description>
 
-Add support for ranges, in fact L<Regexp::Common> already
-supports this, but B<Data::Validate> currently doesn't support
-parameters for types.
+Returns the untainted number if the test value is a hex number.
 
-=item *
+=item I<Arguments>
 
-Perhaps add code validation too, for example we could have
-a type 'perl' which tries to evaluate the given value. On the
-other side this may lead to security holes - so I might never do it.
+=over 4
 
-=item *
+=item $value
 
-Plugin System
+The potential number to test.
 
-=item *
+=back
 
-Possibly add support for grammars. This might be much more powerful
-than regular expressions, say:
+=item I<Returns>
 
- { name => 'expr OP expr | expr' }
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
 
-or something like this.
+=item I<Notes, Exceptions, & Bugs>
+
+None
+
+=back
+
+=cut
+
+sub is_hex {
+	my $self = shift if ref($_[0]); 
+	my $value = shift;
+	
+	return unless defined $value;
+	
+	return if $value =~ /[^0-9a-f]/i;
+	$value = lc($value);
+	
+	my $int = hex($value);
+	return unless (defined $int);
+	my $hex = sprintf "%x", $int;
+	return $hex if ($hex eq $value);
+	
+	# handle zero stripping
+	if (my ($z) = $value =~ /^(0+)/) {
+		return "$z$hex" if ("$z$hex" eq $value);
+	}
+	
+	return;
+}
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_oct> - is the value an octal number?
+
+  is_oct($value);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted number if the test value is a octal number.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The potential number to test.
+
+=back
+
+=item I<Returns>
+
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
+
+=item I<Notes, Exceptions, & Bugs>
+
+None
+
+=back
+
+=cut
+
+sub is_oct {
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	
+	return unless defined $value;
+	
+	return if $value =~ /[^0-7]/;
+		
+	my $int = oct($value);
+	return unless (defined $int);
+	my $oct = sprintf "%o", $int;
+	return $oct if ($oct eq $value);
+	
+	# handle zero stripping
+	if (my ($z) = $value =~ /^(0+)/) {
+		return "$z$oct" if ("$z$oct" eq $value);
+	}
+	
+	return;
+}
+
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_between> - is the value between two numbers?
+
+  is_between($value, $min, $max);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted number if the test value is numeric, and falls between
+$min and $max inclusive.  Note that either $min or $max can be undef, which 
+means 'unlimited'.  i.e. is_between($val, 0, undef) would pass for any number
+zero or larger.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The potential number to test.
+
+=item $min
+
+The minimum valid value.  Unlimited if set to undef
+
+=item $max
+
+The maximum valid value.  Unlimited if set to undef
+
+=back
+
+=item I<Returns>
+
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
+
+
+=back
+
+=cut
+
+sub is_between{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	my $min = shift;
+	my $max = shift;
+	
+	# must be a number
+	my $untainted = is_numeric($value);
+	return unless defined($untainted);
+	
+	# issues with very large numbers.  Fall over to using 
+	# arbitrary precisions math.
+	if(length($value) > 10){
+		
+		my $i = Math::BigInt->new($value);
+		
+		# minimum bound
+		if(defined($min)){
+			$min = Math::BigInt->new($min);
+			return unless $i >= $min;
+		}
+		
+		# maximum bound
+		if(defined($max)){
+			$max = Math::BigInt->new($max);
+			return unless $i <= $max;
+		}
+		
+		# untaint
+		($value) = $i->bstr() =~ /(.+)/;
+		return $value;
+	}
+	
+	
+	# minimum bound
+	if(defined($min)){
+		return unless $value >= $min;
+	}
+	
+	# maximum bound
+	if(defined($max)){
+		return unless $value <= $max;
+	}
+	
+	return $untainted;
+}
+
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_greater_than> - is the value greater than a threshold?
+
+  is_greater_than($value, $threshold);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted number if the test value is numeric, and is greater than
+$threshold. (not inclusive)
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The potential number to test.
+
+=item $threshold
+
+The minimum value (non-inclusive)
+
+=back
+
+=item I<Returns>
+
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
+
+
+=back
+
+=cut
+
+sub is_greater_than{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	my $threshold = shift;
+		
+	# must be a number
+	my $untainted = is_numeric($value);
+	return unless defined($untainted);
+	
+	# threshold must be defined
+	return unless defined $threshold;
+	
+	return unless $value > $threshold;
+		
+	return $untainted;
+}
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_less_than> - is the value less than a threshold?
+
+  is_less_than($value, $threshold);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted number if the test value is numeric, and is less than
+$threshold. (not inclusive)
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The potential number to test.
+
+=item $threshold
+
+The maximum value (non-inclusive)
+
+=back
+
+=item I<Returns>
+
+Returns the untainted number on success, undef on failure.  Note that the return
+can be 0, so always check with defined()
+
+
+=back
+
+=cut
+
+sub is_less_than{	
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	my $threshold = shift;
+		
+	# must be a number
+	my $untainted = is_numeric($value);
+	return unless defined($untainted);
+	
+	# threshold must be defined
+	return unless defined $threshold;
+	
+	return unless $value < $threshold;
+		
+	return $untainted;
+}
+
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_equal_to> - do a string/number neutral ==
+
+  is_equal_to($value, $target);
+
+=over 4
+
+=item I<Description>
+
+Returns the target if $value is equal to it.  Does a math comparison if
+both $value and $target are numeric, or a string comparison otherwise. 
+Both the $value and $target must be defined to get a true return.  (i.e.
+undef != undef)
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The  value to test.
+
+=item $target
+
+The value to test against
+
+=back
+
+=item I<Returns>
+
+Unlike most validator routines, this one does not necessarily untaint its return value,
+it just returns $target.  This has the effect of untainting if the target is a constant or
+other clean value.  (i.e. is_equal_to($bar, 'foo')).  Note that the return
+can be 0, so always check with defined()
+
+
+=back
+
+=cut
+
+sub is_equal_to{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	my $target = shift;
+	
+	# value and target must be defined
+	return unless defined $value;
+	return unless defined $target;
+	
+	if(defined(is_numeric($value)) && defined(is_numeric($target))){
+		return $target if $value == $target;
+	} else {
+		# string comparison
+		return $target if $value eq $target;
+	}
+	
+	return;
+}
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_even> - is a number even?
+
+  is_even($value);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted $value if it's numeric, an integer, and even.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The  value to test.
+
+=back
+
+=item I<Returns>
+
+Returns $value (untainted). Note that the return can be 0, so always
+check with defined().
+
+
+=back
+
+=cut
+
+sub is_even{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	
+	return unless defined(is_numeric($value));
+	my $untainted = is_integer($value);
+	return unless defined($untainted);
+	
+	return $untainted unless $value % 2;
+	
+	return;
+}
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_odd> - is a number odd?
+
+  is_odd($value);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted $value if it's numeric, an integer, and odd.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The value to test.
+
+=back
+
+=item I<Returns>
+
+Returns $value (untainted). Note that the return can be 0, so always
+check with defined().
+
+=back
+
+=cut
+
+sub is_odd{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	
+	return unless defined(is_numeric($value));
+	my $untainted = is_integer($value);
+	return unless defined($untainted);
+	
+	return $untainted if $value % 2;
+	
+	return;
+}
+
+
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_alphanumeric> - does it only contain letters and numbers?
+
+  is_alphanumeric($value);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted $value if it is defined and only contains letters (upper
+or lower case) and numbers.  Also allows an empty string - ''.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The value to test.
+
+=back
+
+=item I<Returns>
+
+Returns $value (untainted). Note that the return can be 0, so always
+check with defined().
+
+=back
+
+=cut
+
+sub is_alphanumeric{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	
+	return unless defined($value);
+	return '' if $value eq ''; # allow for empty string
+	
+	my($untainted) = $value =~ /([a-z0-9]+)/i;
+	
+	return unless defined($untainted);
+	return unless $untainted eq $value;
+	
+	return $untainted;
+	
+}
+
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<is_printable> - does it only contain printable characters?
+
+  is_alphanumeric($value);
+
+=over 4
+
+=item I<Description>
+
+Returns the untainted $value if it is defined and only contains printable characters
+as defined by the composite POSIX character class [[:print:][:space:]].  Also allows an empty string - ''.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The value to test.
+
+=back
+
+=item I<Returns>
+
+Returns $value (untainted). Note that the return can be 0, so always
+check with defined().
+
+=back
+
+=cut
+
+sub is_printable{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	
+	return unless defined($value);
+	return '' if $value eq ''; # allow for empty string
+	
+	my($untainted) = $value =~ /([[:print:][:space:]]+)/i;
+	
+	return unless defined($untainted);
+	return unless $untainted eq $value;
+
+	return $untainted;
+	
+}
+
+
+# -------------------------------------------------------------------------------
+
+=pod
+
+=item B<length_is_between> - is the string length between two limits?
+
+  length_is_between($value, $min, $max);
+
+=over 4
+
+=item I<Description>
+
+Returns $value if it is defined and its length
+is between $min and $max inclusive.  Note that this function does not
+untaint the value.
+
+If either $min or $max are undefined they are treated as no-limit.
+
+=item I<Arguments>
+
+=over 4
+
+=item $value
+
+The value to test.
+
+=item $min
+
+The minimum length of the string (inclusive).
+
+=item $max
+
+The maximum length of the string (inclusive).
+
+=back
+
+=item I<Returns>
+
+Returns $value.  Note that the return can be 0, so always check with
+defined().  The value is not automatically untainted.
+
+=back
+
+=cut
+
+sub length_is_between{
+	my $self = shift if ref($_[0]);
+	my $value = shift;
+	my $min = shift;
+	my $max = shift;
+	
+	return unless defined($value);
+	
+	if(defined($min)){
+		return unless length($value) >= $min;
+	}
+	
+	if(defined($max)){
+		return unless length($value) <= $max;
+	}
+	
+	return $value;
+	
+}
+
+
+=pod
 
 =back
 
 =head1 AUTHOR
 
-Thomas Linden <tlinden |AT| cpan.org>
+Richard Sonnen <F<sonnen@richardsonnen.com>>.
 
-Thanks to David Cantrell for his helpful hints.
+=head1 COPYRIGHT
 
-=head1 VERSION
+Copyright (c) 2004 Richard Sonnen. All rights reserved.
 
-0.04
+This program is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
 
 =cut
-
