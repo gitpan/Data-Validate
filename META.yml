@@ -1,11 +1,11 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Data-Validate
-version:      0.07
+version:      0.08
 version_from: Validate.pm
 installdirs:  site
 requires:
-    Math::BigInt:                  0
+    Math::BigInt:                  1.77
     POSIX:                         0
 
 distribution_type: module

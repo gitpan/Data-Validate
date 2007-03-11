@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::Validate.
 
+0.8   20070310
+	- added version prereq for Math::BigInt
+
 0.7   20070309
 	- added missing prerequisite for Math::BigInt
 

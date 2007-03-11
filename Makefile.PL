@@ -8,7 +8,7 @@ WriteMakefile(
     'AUTHOR'		=>	'Richard Sonnen (sonnen@richardsonnen.com)',
     'PREREQ_PM'		=>	{
     					'POSIX'		=>	0,
-					'Math::BigInt'	=>	0,
+					'Math::BigInt'	=>	1.77,
     					},
     'dist'			=>	{
     					'COMPRESS'	=>	'gzip -9f',

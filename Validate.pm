@@ -38,7 +38,7 @@ use Math::BigInt;
 		string	=>	[qw(is_equal_to is_alphanumeric is_printable length_is_between)],
 );
 
-$VERSION = '0.07';
+$VERSION = '0.08';
 
 
 # No preloads
